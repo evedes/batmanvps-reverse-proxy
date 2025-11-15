@@ -1,0 +1,16 @@
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx-reverseproxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./ssl/eduardovedes:/etc/nginx/ssl/eduardovedes
+    networks:
+      - batmanvps
+networks:
+  batmanvps:
+    external: true
