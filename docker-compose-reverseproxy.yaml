@@ -9,6 +9,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
       - ./ssl/eduardovedes:/etc/nginx/ssl/eduardovedes
+      - ./ssl/atomize:/etc/nginx/ssl/atomize
     networks:
       - batmanvps
 networks:
