@@ -12,6 +12,7 @@ services:
       - ./ssl/atomize:/etc/nginx/ssl/atomize
       - ./ssl/minio:/etc/nginx/ssl/minio
       - ./ssl/leanly:/etc/nginx/ssl/leanly
+      - ./ssl/bicodobra:/etc/nginx/ssl/bicodobra
     networks:
       - batmanvps
 networks:
