@@ -11,6 +11,7 @@ services:
       - ./ssl/eduardovedes:/etc/nginx/ssl/eduardovedes
       - ./ssl/atomize:/etc/nginx/ssl/atomize
       - ./ssl/minio:/etc/nginx/ssl/minio
+      - ./ssl/zyker:/etc/nginx/ssl/zyker
     networks:
       - batmanvps
 networks:
