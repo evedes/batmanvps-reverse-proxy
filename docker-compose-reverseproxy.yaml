@@ -12,6 +12,9 @@ services:
       - ./ssl/atomize:/etc/nginx/ssl/atomize
       - ./ssl/minio:/etc/nginx/ssl/minio
       - ./ssl/zyker:/etc/nginx/ssl/zyker
+      - ./ssl/getkinfolio:/etc/nginx/ssl/getkinfolio
+      - ./ssl/onedevarmy:/etc/nginx/ssl/onedevarmy
+      - ./ssl/schola:/etc/nginx/ssl/schola
     networks:
       - batmanvps
 networks:
