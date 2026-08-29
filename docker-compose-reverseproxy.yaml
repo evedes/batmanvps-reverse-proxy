@@ -16,6 +16,7 @@ services:
       - ./ssl/onedevarmy:/etc/nginx/ssl/onedevarmy
       - ./ssl/schola:/etc/nginx/ssl/schola
       - ./ssl/bicodobra:/etc/nginx/ssl/bicodobra
+      - ./ssl/rhizo:/etc/nginx/ssl/rhizo
     networks:
       - batmanvps
 networks:
