@@ -13,7 +13,7 @@ services:
       - ./ssl/minio:/etc/nginx/ssl/minio
       - ./ssl/zyker:/etc/nginx/ssl/zyker
       - ./ssl/getkinfolio:/etc/nginx/ssl/getkinfolio
-      - ./ssl/staging.getkinfolio:/etc/nginx/ssl/staging.getkinfolio
+      - ./ssl/getkinfolio.staging:/etc/nginx/ssl/getkinfolio.staging
       - ./ssl/onedevarmy:/etc/nginx/ssl/onedevarmy
       - ./ssl/schola:/etc/nginx/ssl/schola
       - ./ssl/bicodobra:/etc/nginx/ssl/bicodobra
