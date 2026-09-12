@@ -1,0 +1,28 @@
+#!/bin/sh
+# Run on Batman after staging.getkinfolio.com resolves to this server.
+set -eu
+cd /home/edo
+state=.config/getkinfolio-staging
+acme="$PWD/$state/acme"
+dest="$PWD/ssl/getkinfolio/staging"
+mkdir -p "$acme/config" "$acme/work" "$acme/log"
+certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
+  --webroot -w "$dest/acme" -d staging.getkinfolio.com \
+  --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/log"
+install -m 644 "$acme/config/live/staging.getkinfolio.com/fullchain.pem" "$dest/fullchain.pem"
+install -m 600 "$acme/config/live/staging.getkinfolio.com/privkey.pem" "$dest/privkey.pem"
+cp nginx.conf "$state/nginx.before-staging-tls.conf"
+if ! grep -q '# getkinfolio staging HTTPS:' nginx.conf; then
+  cat "$state/staging-tls.conf" >> nginx.conf
+fi
+if ! docker exec nginx-reverseproxy nginx -t; then
+  cat "$state/nginx.before-staging-tls.conf" > nginx.conf
+  exit 1
+fi
+docker exec nginx-reverseproxy nginx -s reload
+# Renewal uses a separate account/config and does not alter existing site certs.
+chmod 700 "$state/renew-tls"
+(crontab -l 2>/dev/null | grep -v '/getkinfolio-staging/renew-tls' || true
+ printf '17 4,16 * * * /home/edo/.config/getkinfolio-staging/renew-tls >> /home/edo/.config/getkinfolio-staging/renew-tls.log 2>&1\n'
+) | crontab -
+curl -fsS --max-time 15 https://staging.getkinfolio.com/health
