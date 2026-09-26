@@ -1,6 +1,7 @@
 services:
   nginx:
-    image: nginx:latest
+    image: batman-reverseproxy:latest
+    build: ./logging
     container_name: nginx-reverseproxy
     restart: unless-stopped
     ports:
@@ -18,6 +19,11 @@ services:
       - ./ssl/schola:/etc/nginx/ssl/schola
       - ./ssl/bicodobra:/etc/nginx/ssl/bicodobra
       - ./ssl/rhizo:/etc/nginx/ssl/rhizo
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - batmanvps
 networks:

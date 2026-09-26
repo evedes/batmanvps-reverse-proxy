@@ -5,12 +5,22 @@ on:
     branches:
       - main
 
+concurrency:
+  group: batman-reverse-proxy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code (for access to docker-compose-reverseproxy.yaml and nginx.conf)
         uses: actions/checkout@v5
+
+      - name: Verify credential-safe logging with real nginx
+        run: |
+          python3 -m unittest discover -s logging -p 'test_redactor.py'
+          python3 logging/test_nginx.py
+          docker compose -f docker-compose-reverseproxy.yaml config --quiet
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v2
@@ -19,10 +29,28 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:batman-ci
 
+      - name: Preserve the active proxy for rollback
+        uses: appleboy/ssh-action@v0.1.0
+        with:
+          host: ${{ secrets.BATMAN_SERVER_IP }}
+          username: ${{ secrets.BATMAN_SERVER_USER }}
+          key: ${{ secrets.BATMAN_SERVER_SSH_KEY }}
+          port: 22
+          script: |
+            set -eu
+            umask 077
+            rollback="$HOME/.local/state/reverseproxy-rollback/${{ github.sha }}"
+            mkdir -p "$rollback"
+            cp nginx.conf docker-compose-reverseproxy.yaml "$rollback/"
+            docker inspect nginx-reverseproxy --format '{{.Image}}' > "$rollback/image-id"
+            docker image tag "$(cat "$rollback/image-id")" 'batman-reverseproxy:rollback-${{ github.sha }}'
+            docker cp nginx-reverseproxy:/var/log/nginx "$rollback/nginx-logs"
+            chmod -R go-rwx "$rollback"
+
       - name: Copy nginx.conf to Batman Server
         uses: appleboy/scp-action@v0.1.7
         with:
-          source: "docker-compose-reverseproxy.yaml,nginx.conf"
+          source: "docker-compose-reverseproxy.yaml,nginx.conf,logging"
           target: /home/${{ secrets.BATMAN_SERVER_USER}}/
           host: ${{ secrets.BATMAN_SERVER_IP }}
           username: ${{ secrets.BATMAN_SERVER_USER }}
@@ -36,24 +64,19 @@ jobs:
           key: ${{ secrets.BATMAN_SERVER_SSH_KEY }}
           port: 22
           script: |
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose -f docker-compose-reverseproxy.yaml up -d
-
-      - name: List and remove non-latest images in Batman Server
-        uses: appleboy/ssh-action@v0.1.0
-        with:
-          host: ${{ secrets.BATMAN_SERVER_IP }}
-          username: ${{ secrets.BATMAN_SERVER_USER }}
-          key: ${{ secrets.BATMAN_SERVER_SSH_KEY }}
-          port: 22
-          script: |
-            images=$(docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep -v ':latest')
-            echo "Images to be removed:"
-            echo "$images"
-
-            while IFS= read -r image; do
-             repo_tag=$(echo $image | awk '{print $1}')
-             image_id=$(echo $image | awk '{print $2}')
-             echo "Removing image $repo_tag with ID $image_id"
-             docker rmi "$image_id" || true
-            done <<< "$images"
+            set -eu
+            docker compose -f docker-compose-reverseproxy.yaml build nginx
+            docker compose -f docker-compose-reverseproxy.yaml run --rm --no-deps nginx nginx -t
+            sh logging/archive-legacy-logs.sh
+            docker compose -f docker-compose-reverseproxy.yaml up -d nginx
+            docker exec nginx-reverseproxy nginx -s reload
+            ready=false
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if curl --noproxy '*' --fail --silent --show-error --max-time 5 --resolve getkinfolio.com:443:127.0.0.1 https://getkinfolio.com/health -o /dev/null &&
+                 curl --noproxy '*' --fail --silent --show-error --max-time 5 --resolve staging.getkinfolio.com:443:127.0.0.1 https://staging.getkinfolio.com/health -o /dev/null; then
+                ready=true
+                break
+              fi
+              sleep 2
+            done
+            test "$ready" = true
