@@ -143,6 +143,9 @@ def main():
                            "-H", "X-Real-IP: 203.0.113.9",
                            f"https://getkinfolio.com{path}")
                 assert body == f"umami {target} 198.51.100.7", (path, body)
+            # Back to the single network the rest of the test was written for.
+            run("docker", "network", "disconnect", cf_network, proxy)
+            ports.update(json.loads(run("docker", "inspect", proxy))[0]["NetworkSettings"]["Ports"])
             body, status = request("getkinfolio.com", "/a/api/send", data='{"type":"event"}')
             assert status == 200 and body.startswith("umami /api/send "), body
             for path in ("/a/login", "/a/api/auth/login", "/a/", "/a/script.js.map", "/a/api/send/x"):
