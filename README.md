@@ -53,7 +53,8 @@ the active configuration, image ID and container-local logs under
 `~/.local/state/reverseproxy-rollback/<commit>/` with owner-only permissions, and tags the old
 image `batman-reverseproxy:rollback-<commit>`. No server-wide image cleanup runs. The workflow
 checks production and staging health through the local TLS proxy after replacement. Replacing
-the shared proxy briefly interrupts existing connections; it does not restart application
+the shared proxy (every deploy recreates the container, because `nginx.conf` is a single-file
+bind mount that a running container would keep pinned to the old file) briefly interrupts existing connections; it does not restart application
 containers. A rollback uses the saved configuration and image, followed by `nginx -t` and the
 same origin health checks. Saved logs are sensitive and must remain restricted.
 

@@ -68,7 +68,10 @@ jobs:
             docker compose -f docker-compose-reverseproxy.yaml build nginx
             docker compose -f docker-compose-reverseproxy.yaml run --rm --no-deps nginx nginx -t
             sh logging/archive-legacy-logs.sh
-            docker compose -f docker-compose-reverseproxy.yaml up -d nginx
+            # nginx.conf is a single-file bind mount and scp replaces the file, so a
+            # running container keeps the old inode; reload alone would serve the
+            # old config. Recreate so every deploy mounts the new file.
+            docker compose -f docker-compose-reverseproxy.yaml up -d --force-recreate nginx
             ready=false
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               # Container startup is asynchronous; nginx may not have its PID file yet.
