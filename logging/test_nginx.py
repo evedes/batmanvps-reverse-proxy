@@ -16,6 +16,9 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 NGINX = "nginx:1.31-alpine"
+CURL = "curlimages/curl:8.10.1"
+# A real Cloudflare range, so a client on this network is "Cloudflare" to nginx.
+CLOUDFLARE_SUBNET = "173.245.48.0/20"
 
 
 def run(*args):
@@ -34,6 +37,7 @@ def wait_for(check):
 def main():
     prefix = "f10-" + uuid.uuid4().hex[:10]
     network = prefix + "-network"
+    cf_network = prefix + "-cloudflare"
     upstream, umami, proxy = [prefix + suffix for suffix in ("-app", "-umami", "-proxy")]
     image = prefix + ":test"
     containers = []
@@ -120,10 +124,25 @@ def main():
 
             # Umami: only the two exact tracking paths reach it from a site origin,
             # rewritten to Umami's own paths; X-Real-IP cannot be spoofed.
-            spoof = ("X-Real-IP: 203.0.113.9", "X-Forwarded-For: 203.0.113.9")
+            spoof = ("X-Real-IP: 203.0.113.9", "X-Forwarded-For: 203.0.113.9",
+                     "CF-Connecting-IP: 203.0.113.9")
             body, status = request("getkinfolio.com", "/a/script.js", headers=spoof)
             assert status == 200 and body.startswith("umami /script.js "), body
-            assert "203.0.113.9" not in body, "Client-supplied X-Real-IP reached Umami"
+            assert "203.0.113.9" not in body, "Client-supplied IP header reached Umami from a non-Cloudflare peer"
+            # Through Cloudflare, CF-Connecting-IP becomes the visitor IP Umami sees.
+            run("docker", "pull", "--quiet", CURL)
+            run("docker", "network", "create", "--subnet", CLOUDFLARE_SUBNET, cf_network)
+            run("docker", "network", "connect", cf_network, proxy)
+            # Joining a network re-assigns the proxy's ephemeral host ports.
+            ports.update(json.loads(run("docker", "inspect", proxy))[0]["NetworkSettings"]["Ports"])
+            for path, target in (("/a/script.js", "/script.js"), ("/a/api/send", "/api/send")):
+                body = run("docker", "run", "--rm", "--network", cf_network, CURL,
+                           "--silent", "--insecure", "--max-time", "10",
+                           "--connect-to", f"getkinfolio.com:443:{proxy}:443",
+                           "-H", "CF-Connecting-IP: 198.51.100.7",
+                           "-H", "X-Real-IP: 203.0.113.9",
+                           f"https://getkinfolio.com{path}")
+                assert body == f"umami {target} 198.51.100.7", (path, body)
             body, status = request("getkinfolio.com", "/a/api/send", data='{"type":"event"}')
             assert status == 200 and body.startswith("umami /api/send "), body
             for path in ("/a/login", "/a/api/auth/login", "/a/", "/a/script.js.map", "/a/api/send/x"):
@@ -169,8 +188,9 @@ def main():
                            stderr=subprocess.DEVNULL, check=False)
         subprocess.run(["docker", "image", "rm", image], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, check=False)
-        subprocess.run(["docker", "network", "rm", network], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=False)
+        for name in (cf_network, network):
+            subprocess.run(["docker", "network", "rm", name], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=False)
 
 
 if __name__ == "__main__":

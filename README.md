@@ -7,11 +7,12 @@ A Docker-based Nginx reverse proxy for the Batman dedicated server that handles 
 The Umami dashboard is served at `analytics.getkinfolio.com` (certificate in
 `ssl/getkinfolio.analytics/`), proxied to the `batmanvps-umami` container (repository
 `batmanvps-umami`, deployed from Forgejo). Tracked sites serve the tracker first-party through
-two exact-match locations, `location = /a/script.js` and `location = /a/api/send`, currently on
-`getkinfolio.com` only. To track another site, copy those two locations into its HTTPS server
-block. Never use a `/a/` prefix location, because that would expose Umami's login and admin API on the
-site. Those locations always overwrite `X-Real-IP` with `$remote_addr`. Umami reads only that header,
-so visitors cannot spoof their location.
+one anchored location, `location ~ ^/a/(script\.js|api/send)$` (exactly those two paths, mapped to
+Umami's by `$umami_path`), currently on `getkinfolio.com` only. To track another site, copy that
+location into its HTTPS server block. Never use a `/a/` prefix location, because that would expose
+Umami's login and admin API on the site. Because getkinfolio.com is behind Cloudflare, the location takes the visitor IP from
+`CF-Connecting-IP`, but only for connections from Cloudflare's published ranges (`set_real_ip_from`).
+It then overwrites `X-Real-IP`, the only header Umami reads, so visitors cannot spoof their location.
 
 ## Kinfolio credential-safe logging
 
