@@ -34,7 +34,7 @@ def wait_for(check):
 def main():
     prefix = "f10-" + uuid.uuid4().hex[:10]
     network = prefix + "-network"
-    upstream, proxy = [prefix + suffix for suffix in ("-app", "-proxy")]
+    upstream, umami, proxy = [prefix + suffix for suffix in ("-app", "-umami", "-proxy")]
     image = prefix + ":test"
     containers = []
     run("docker", "network", "create", network)
@@ -48,7 +48,8 @@ def main():
             run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                 "-subj", "/CN=localhost", "-keyout", str(base / "key"), "-out", str(base / "cert"))
             for domain in ("eduardovedes", "atomize", "minio", "zyker", "getkinfolio",
-                           "getkinfolio.staging", "onedevarmy", "schola", "bicodobra", "rhizo"):
+                           "getkinfolio.staging", "getkinfolio.analytics", "onedevarmy", "schola",
+                           "bicodobra", "rhizo"):
                 target = ssl_dir / domain
                 target.mkdir()
                 shutil.copy(base / "cert", target / "fullchain.pem")
@@ -61,6 +62,13 @@ def main():
                 "--network-alias", "getkinfolio", "--network-alias", "getkinfolio-staging",
                 "-v", f"{mock}:/etc/nginx/nginx.conf:ro", NGINX)
             containers.append(upstream)
+            umami_mock = base / "umami.conf"
+            umami_mock.write_text('events {} http { server { listen 3000; '
+                                  'return 200 "umami $request_uri $http_x_real_ip"; } }')
+            run("docker", "run", "-d", "--name", umami, "--network", network,
+                "--network-alias", "batmanvps-umami",
+                "-v", f"{umami_mock}:/etc/nginx/nginx.conf:ro", NGINX)
+            containers.append(umami)
             run("docker", "run", "-d", "--name", proxy, "--network", network,
                 "-p", "127.0.0.1::80", "-p", "127.0.0.1::443",
                 "-v", f"{ROOT / 'nginx.conf'}:/etc/nginx/conf.d/default.conf:ro",
@@ -70,7 +78,7 @@ def main():
             run("docker", "exec", proxy, "nginx", "-t")
             ports = json.loads(run("docker", "inspect", proxy))[0]["NetworkSettings"]["Ports"]
 
-            def request(host, path, https=True, auth=True):
+            def request(host, path, https=True, auth=True, headers=(), data=None):
                 port = ports["443/tcp" if https else "80/tcp"][0]["HostPort"]
                 scheme = "https" if https else "http"
                 args = ["curl", "--silent", "--show-error", "--insecure", "--path-as-is",
@@ -80,6 +88,10 @@ def main():
                 if auth:
                     basic = base64.b64encode(b"edo:test-only-password").decode()
                     args += ["-H", "Authorization: Basic " + basic]
+                for header in headers:
+                    args += ["-H", header]
+                if data is not None:
+                    args += ["--data", data]
                 response = run(*args, f"{scheme}://{host}:{port}{path}")
                 body, code = response.rsplit("\n", 1)
                 assert 'Referrer-Policy: no-referrer' in (base / "headers").read_text()
@@ -105,6 +117,26 @@ def main():
             for host in ("getkinfolio.com", "www.getkinfolio.com", "staging.getkinfolio.com"):
                 assert request(host, paths[1], https=False)[1] == 301
             assert request("getkinfolio.com", "/book/view")[1] == 200
+
+            # Umami: only the two exact tracking paths reach it from a site origin,
+            # rewritten to Umami's own paths; X-Real-IP cannot be spoofed.
+            spoof = ("X-Real-IP: 203.0.113.9", "X-Forwarded-For: 203.0.113.9")
+            body, status = request("getkinfolio.com", "/a/script.js", headers=spoof)
+            assert status == 200 and body.startswith("umami /script.js "), body
+            assert "203.0.113.9" not in body, "Client-supplied X-Real-IP reached Umami"
+            body, status = request("getkinfolio.com", "/a/api/send", data='{"type":"event"}')
+            assert status == 200 and body.startswith("umami /api/send "), body
+            for path in ("/a/login", "/a/api/auth/login", "/a/", "/a/script.js.map", "/a/api/send/x"):
+                body, status = request("getkinfolio.com", path)
+                assert status == 200 and body == path, (path, body)
+            for host in ("staging.getkinfolio.com", "www.getkinfolio.com"):
+                body, _ = request(host, "/a/script.js")
+                assert not body.startswith("umami"), (host, body)
+            body, status = request("analytics.getkinfolio.com", "/login")
+            assert status == 200 and body.startswith("umami /login "), body
+            assert request("analytics.getkinfolio.com", "/login", https=False)[1] == 301
+            assert "Location: https://analytics.getkinfolio.com/login" in (base / "headers").read_text()
+
             run("docker", "kill", "--signal", "HUP", proxy)
             assert request("getkinfolio.com", "/book/view")[1] == 200
 
@@ -130,7 +162,7 @@ def main():
             # A failed PID 1 cannot leave an unfiltered nginx running.
             run("docker", "kill", "--signal", "KILL", proxy)
             assert json.loads(run("docker", "inspect", proxy))[0]["State"]["Running"] is False
-            print("PASS: nginx syntax, routing, redirects, auth, access/error redaction, fail-closed lifecycle")
+            print("PASS: nginx syntax, routing, umami tracking/dashboard, redirects, auth, access/error redaction, fail-closed lifecycle")
     finally:
         for container in reversed(containers):
             subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL,

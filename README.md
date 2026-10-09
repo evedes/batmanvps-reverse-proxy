@@ -2,6 +2,17 @@
 
 A Docker-based Nginx reverse proxy for the Batman dedicated server that handles SSL termination and routing for eduardovedes.com and its subdomains.
 
+## Umami analytics
+
+The Umami dashboard is served at `analytics.getkinfolio.com` (certificate in
+`ssl/getkinfolio.analytics/`), proxied to the `batmanvps-umami` container (repository
+`batmanvps-umami`, deployed from Forgejo). Tracked sites serve the tracker first-party through
+two exact-match locations, `location = /a/script.js` and `location = /a/api/send`, currently on
+`getkinfolio.com` only. To track another site, copy those two locations into its HTTPS server
+block. Never use a `/a/` prefix location, because that would expose Umami's login and admin API on the
+site. Those locations always overwrite `X-Real-IP` with `$remote_addr`. Umami reads only that header,
+so visitors cannot spoof their location.
+
 ## Kinfolio credential-safe logging
 
 Kinfolio's login, restore and order URLs carry access credentials. Its production/staging,

@@ -15,6 +15,7 @@ services:
       - ./ssl/zyker:/etc/nginx/ssl/zyker
       - ./ssl/getkinfolio:/etc/nginx/ssl/getkinfolio
       - ./ssl/getkinfolio.staging:/etc/nginx/ssl/getkinfolio.staging
+      - ./ssl/getkinfolio.analytics:/etc/nginx/ssl/getkinfolio.analytics
       - ./ssl/onedevarmy:/etc/nginx/ssl/onedevarmy
       - ./ssl/schola:/etc/nginx/ssl/schola
       - ./ssl/bicodobra:/etc/nginx/ssl/bicodobra

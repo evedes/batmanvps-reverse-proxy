@@ -49,3 +49,10 @@ SSL certificates are expected in ./ssl/{domain}/ directories with:
 - privkey.pem (private key)
 
 All domains use TLSv1.2 and TLSv1.3 with HSTS headers for security.
+
+## Umami Analytics
+
+- `analytics.getkinfolio.com` serves the Umami dashboard from `batmanvps-umami:3000` (cert in `./ssl/getkinfolio.analytics/`; repo `batmanvps-umami`).
+- Tracked sites (currently `getkinfolio.com`) expose exactly `location = /a/script.js` and `location = /a/api/send`, proxied to Umami's `/script.js` and `/api/send`. To track another site, copy those two locations into its HTTPS block. Never use a `/a/` prefix, because it would expose Umami's admin API on the site.
+- Those locations must keep `proxy_set_header X-Real-IP $remote_addr;`, because Umami trusts only `X-Real-IP` for visitor geolocation.
+- `logging/test_nginx.py` provisions a fake cert for every `ssl/` directory and asserts the Umami routing; add new cert directories there too.
