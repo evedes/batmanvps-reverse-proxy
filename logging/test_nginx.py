@@ -165,7 +165,8 @@ def main():
             # Force real nginx errors: request, upstream and referrer contexts must all be safe.
             run("docker", "stop", upstream)
             for path in paths:
-                assert request("getkinfolio.com", path)[1] == 502
+                body, status = request("getkinfolio.com", path)
+                assert status == 502, (path, status, body[:200])
             wait_for(lambda: any(reason in run("docker", "logs", proxy) for reason in ("connect() failed", "could not be resolved", "upstream timed out")))
             logs = run("docker", "logs", proxy)
             assert any(reason in logs for reason in ("connect() failed", "could not be resolved", "upstream timed out"))
