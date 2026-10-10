@@ -52,7 +52,7 @@ def main():
             run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                 "-subj", "/CN=localhost", "-keyout", str(base / "key"), "-out", str(base / "cert"))
             for domain in ("eduardovedes", "atomize", "minio", "zyker", "getkinfolio",
-                           "getkinfolio.staging", "getkinfolio.analytics", "onedevarmy", "schola",
+                           "getkinfolio.staging", "onedevarmy", "onedevarmy.analytics", "schola",
                            "bicodobra", "rhizo"):
                 target = ssl_dir / domain
                 target.mkdir()
@@ -82,13 +82,14 @@ def main():
             run("docker", "exec", proxy, "nginx", "-t")
             ports = json.loads(run("docker", "inspect", proxy))[0]["NetworkSettings"]["Ports"]
 
-            def request(host, path, https=True, auth=True, headers=(), data=None):
+            def request(host, path, https=True, auth=True, headers=(), data=None, kinfolio=True):
                 port = ports["443/tcp" if https else "80/tcp"][0]["HostPort"]
                 scheme = "https" if https else "http"
                 args = ["curl", "--silent", "--show-error", "--insecure", "--path-as-is",
                         "--noproxy", "*", "--max-time", "10", "--resolve", f"{host}:{port}:127.0.0.1",
-                        "-H", "Referer: https://getkinfolio.com/book/restore/F10_REFERRER_MARKER",
                         "-D", str(base / "headers"), "-w", "\n%{http_code}"]
+                if kinfolio:
+                    args += ["-H", "Referer: https://getkinfolio.com/book/restore/F10_REFERRER_MARKER"]
                 if auth:
                     basic = base64.b64encode(b"edo:test-only-password").decode()
                     args += ["-H", "Authorization: Basic " + basic]
@@ -98,7 +99,8 @@ def main():
                     args += ["--data", data]
                 response = run(*args, f"{scheme}://{host}:{port}{path}")
                 body, code = response.rsplit("\n", 1)
-                assert 'Referrer-Policy: no-referrer' in (base / "headers").read_text()
+                if kinfolio:
+                    assert 'Referrer-Policy: no-referrer' in (base / "headers").read_text()
                 return body, int(code)
 
             paths = [
@@ -154,10 +156,20 @@ def main():
             for host in ("staging.getkinfolio.com", "www.getkinfolio.com"):
                 body, _ = request(host, "/a/script.js")
                 assert not body.startswith("umami"), (host, body)
-            body, status = request("analytics.getkinfolio.com", "/login")
+            # Every other tracked site includes the same snippet.
+            for host in ("eduardovedes.com", "www.eduardovedes.com", "atomize.ink", "zyker.dev",
+                         "onedevarmy.ink", "schola.ink", "bicodobra.com", "rhizo.ink"):
+                for path, target in (("/a/script.js", "/script.js"), ("/a/api/send", "/api/send")):
+                    body, status = request(host, path, kinfolio=False)
+                    assert status == 200 and body.startswith(f"umami {target} "), (host, path, body)
+                body, _ = request(host, "/a/login", kinfolio=False)
+                assert not body.startswith("umami"), (host, body)
+            body, _ = request("minio.atomize.ink", "/a/script.js", kinfolio=False)
+            assert not body.startswith("umami"), body
+            body, status = request("analytics.onedevarmy.ink", "/login")
             assert status == 200 and body.startswith("umami /login "), body
-            assert request("analytics.getkinfolio.com", "/login", https=False)[1] == 301
-            assert "Location: https://analytics.getkinfolio.com/login" in (base / "headers").read_text()
+            assert request("analytics.onedevarmy.ink", "/login", https=False)[1] == 301
+            assert "Location: https://analytics.onedevarmy.ink/login" in (base / "headers").read_text()
 
             run("docker", "kill", "--signal", "HUP", proxy)
             assert request("getkinfolio.com", "/book/view")[1] == 200
